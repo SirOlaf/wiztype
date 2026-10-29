@@ -198,6 +198,32 @@ class JsonTypeDumperV2(JsonTypeDumperV1):
         }
 
 
+class JsonTypeDumperV3(JsonTypeDumperV2):
+    version = 3
+
+    def __init__(
+            self,
+            type_tree: dict[str, HashNode],
+            core_object_factory_types: dict[str, dict[str, int]],
+            aliases: dict[str, int],
+    ):
+        super().__init__(type_tree)
+        self.core_object_factory_types = core_object_factory_types
+        self.aliases = aliases
+
+    def dump(self, output_file: str | Path, *, indent: int | None = None):
+        output = {
+            "version": self.version,
+            "classes": {},
+            "aliases": self.aliases,
+            "core_object_factory_types": self.core_object_factory_types,
+        }
+        for formatted_class in self.class_loop(self.type_tree):
+            output["classes"].update(formatted_class)
+
+        self.output(output_file, output, indent)
+
+
 if __name__ == "__main__":
     from wiztype.type_tree import get_type_tree
 

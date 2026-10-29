@@ -29,7 +29,7 @@ def _get_root_node(process: WindowsProcess) -> HashNode:
     return HashNode(address=address, process=process)
 
 
-def _get_children_nodes(node: HashNode, nodes: set):
+def _get_children_nodes(node, nodes: set):
     nodes.add(node)
 
     if node.is_leaf is False:
@@ -43,16 +43,17 @@ def _get_children_nodes(node: HashNode, nodes: set):
     return nodes
 
 
-def _read_all_nodes(root_node: HashNode):
+def read_map_nodes(head_node) -> set:
+    """read all nodes of a msvc std::map given its head node"""
     nodes = set()
 
-    first_node = root_node.parent
+    first_node = head_node.parent
     return _get_children_nodes(first_node, nodes)
 
 
 def get_hash_nodes(process: WindowsProcess) -> set[HashNode]:
     root_node = _get_root_node(process)
-    return _read_all_nodes(root_node)
+    return read_map_nodes(root_node)
 
 
 def get_type_tree() -> dict[str, HashNode]:
@@ -66,6 +67,37 @@ def get_type_tree() -> dict[str, HashNode]:
         if node.is_leaf:
             continue
 
+        # aliases point at an already registered type, see get_type_aliases
+        if node.hash != node.node_data.hash:
+            continue
+
         hash_map[node.node_data.name] = node
 
     return hash_map
+
+
+def get_type_aliases(process: WindowsProcess | None = None) -> dict[str, int]:
+    """
+    get a mapping of alias hash -> hash of the type it resolves to
+
+    aliases are extra keys in the type hash map that point at an already registered
+    type, the serializer resolves them like any other hash
+    note that only the hash of an alias' name is stored, not the name itself
+    """
+    if process is None:
+        process = WindowsProcess.from_name("WizardGraphicalClient.exe")
+
+    aliases = {}
+
+    for node in get_hash_nodes(process):
+        if node.is_leaf:
+            continue
+
+        # & 0xFFFF_FFFF makes it unsigned
+        alias_hash = node.hash & 0xFFFF_FFFF
+        type_hash = node.node_data.hash & 0xFFFF_FFFF
+
+        if alias_hash != type_hash:
+            aliases[str(alias_hash)] = type_hash
+
+    return dict(sorted(aliases.items(), key=lambda item: int(item[0])))

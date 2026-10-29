@@ -12,6 +12,24 @@ class HashNode(MemoryObject):
     node_data: "Type" = DereffedPointer(0x28, "Type")
 
 
+class CoreObjectFactoryNode(MemoryObject):
+    """a node of CoreObjectFactory's std::map<pair<int, uint>, Creator*>"""
+    left: "CoreObjectFactoryNode" = DereffedPointer(0x0, "CoreObjectFactoryNode")
+    parent: "CoreObjectFactoryNode" = DereffedPointer(0x8, "CoreObjectFactoryNode")
+    right: "CoreObjectFactoryNode" = DereffedPointer(0x10, "CoreObjectFactoryNode")
+    is_leaf: bool = Bool(0x19)
+    core_type: int = Signed4(0x20)
+    namespace: int = Unsigned4(0x24)
+    creator: int = Unsigned8(0x28)
+
+
+class CoreType(MemoryObject):
+    """what CoreObject::GetCoreType returns, kept in the core type registry"""
+    name: str = CppString(0x0)
+    hash: int = Signed4(0x20)
+    parent: "CoreType" = DereffedPointer(0x28, "CoreType")
+
+
 class Type(MemoryObject):
     name: str = CppString(0x38)
     hash: int = Signed4(0x58)

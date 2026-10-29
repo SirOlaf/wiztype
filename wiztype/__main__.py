@@ -12,7 +12,7 @@ import wiztype
     type=click.Path(exists=False, dir_okay=False, path_type=Path),
     default="use revision"
 )
-@click.option("--version", type=int, default=2, show_default=True)
+@click.option("--version", type=int, default=3, show_default=True)
 @click.option("--indent", type=int, default=None)
 def main(outfile: Path, version: int, indent: int | None):
     match version:
@@ -20,6 +20,8 @@ def main(outfile: Path, version: int, indent: int | None):
             dump_type = wiztype.JsonTypeDumperV1
         case 2:
             dump_type = wiztype.JsonTypeDumperV2
+        case 3:
+            dump_type = wiztype.JsonTypeDumperV3
         case _:
             click.echo(f"{version} is not a supported version")
             exit(1)
@@ -39,7 +41,15 @@ def main(outfile: Path, version: int, indent: int | None):
     click.echo(f"dumping types for revision {revision} to {outfile}")
 
     tree = wiztype.get_type_tree()
-    dumper = dump_type(tree)
+
+    if version >= 3:
+        dumper = dump_type(
+            tree,
+            core_object_factory_types=wiztype.get_core_object_factory_types(process),
+            aliases=wiztype.get_type_aliases(process),
+        )
+    else:
+        dumper = dump_type(tree)
 
     dumper.dump(outfile, indent=indent)
 
