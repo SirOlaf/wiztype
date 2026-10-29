@@ -11,7 +11,7 @@ from iced_x86 import (
 )
 from memobj import WindowsProcess
 
-from .memory import CoreObjectFactoryNode, CoreType
+from .memory import CoreObjectFactoryNode
 from .type_tree import read_map_nodes
 
 # mov rax, [rip+factory]; mov ebx, edx; movzx edx, r8b; mov r9, [rax+8]
@@ -153,40 +153,65 @@ def _find_vtable(
     return vtable
 
 
-def _get_core_type_from_vtable(process: WindowsProcess, vtable: int) -> CoreType | None:
+def core_type_hash(name: str) -> int:
+    """the djb2 variant RegisterCoreType hashes core type names with"""
+    result = 0x1505
+    for char in name.encode():
+        result = (result * 33 + char) & 0xFFFF_FFFF
+
+    return result & 0x7FFF_FFFF
+
+
+def _get_core_type_name_from_vtable(process: WindowsProcess, vtable: int) -> str | None:
     """
     the first virtual of every CoreObject is GetCoreType which looks like
     lea rcx, [name]; call RegisterCoreType; mov [static], rax; ...; mov rax, [static]; ret
+
+    the static is only filled the first time GetCoreType is called so the name is
+    read from the code instead
     """
     get_core_type = _follow_jumps(process, process.read_formatted(vtable, "Q"))
 
+    name = None
+    call_name = None
+    register_name = None
     stores = set()
     static_core_type = None
     for instruction in _decode(process, get_core_type, 0x100):
+        # lea rcx, [name]
+        if (
+                instruction.mnemonic == Mnemonic.LEA
+                and instruction.memory_base == Register.RIP
+                and instruction.op0_register == Register.RCX
+        ):
+            name = instruction.memory_displacement
+            continue
+
+        if _is_direct_call(instruction):
+            call_name, name = name, None
+            continue
+
         if instruction.mnemonic != Mnemonic.MOV or instruction.memory_base != Register.RIP:
             continue
 
         # mov [static], rax
         if instruction.op0_kind == OpKind.MEMORY and instruction.op1_register == Register.RAX:
             stores.add(instruction.memory_displacement)
+            # the call right before the store is RegisterCoreType
+            register_name = call_name
         # mov rax, [static]
         elif instruction.op0_kind == OpKind.REGISTER and instruction.op0_register == Register.RAX:
             static_core_type = instruction.memory_displacement
 
     # if the static isn't both written and read this is not a GetCoreType function
-    if static_core_type is None or static_core_type not in stores:
+    if static_core_type is None or static_core_type not in stores or register_name is None:
         return None
 
-    core_type_address = process.read_formatted(static_core_type, "Q")
-
-    if core_type_address == 0:
-        return None
-
-    return CoreType(address=core_type_address, process=process)
+    return process.read_memory(register_name, 0x100).split(b"\0")[0].decode()
 
 
-def get_creator_core_type(process: WindowsProcess, creator: int) -> CoreType | None:
-    """get the CoreType of the object a CoreObjectFactory creator instantiates"""
+def get_creator_core_type_name(process: WindowsProcess, creator: int) -> str | None:
+    """get the core type name of the object a CoreObjectFactory creator instantiates"""
     creator_vtable = process.read_formatted(creator, "Q")
     # 0 is the destructor, 1 is Create
     create_function = process.read_formatted(creator_vtable + 8, "Q")
@@ -196,7 +221,7 @@ def get_creator_core_type(process: WindowsProcess, creator: int) -> CoreType | N
     if vtable is None:
         return None
 
-    return _get_core_type_from_vtable(process, vtable)
+    return _get_core_type_name_from_vtable(process, vtable)
 
 
 def get_core_object_factory_types(process: WindowsProcess | None = None) -> dict[str, dict[str, int]]:
@@ -215,13 +240,12 @@ def get_core_object_factory_types(process: WindowsProcess | None = None) -> dict
 
     core_types = {}
     for node in sorted(nodes, key=lambda n: (n.core_type, n.namespace)):
-        if (core_type := get_creator_core_type(process, node.creator)) is None:
+        if (name := get_creator_core_type_name(process, node.creator)) is None:
             continue
 
         core_types[str(node.core_type)] = {
             "namespace": node.namespace,
-            # & 0xFFFF_FFFF makes it unsigned
-            "type_hash": core_type.hash & 0xFFFF_FFFF,
+            "type_hash": core_type_hash(name),
         }
 
     return core_types
