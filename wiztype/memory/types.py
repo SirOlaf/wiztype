@@ -19,7 +19,6 @@ class CoreObjectFactoryNode(MemoryObject):
     right: "CoreObjectFactoryNode" = DereffedPointer(0x10, "CoreObjectFactoryNode")
     is_leaf: bool = Bool(0x19)
     core_type: int = Signed4(0x20)
-    namespace: int = Unsigned4(0x24)
     creator: int = Unsigned8(0x28)
 
 

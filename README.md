@@ -60,7 +60,8 @@ discord: <https://discord.gg/wcftyYm6qe>
   // types CoreObjectFactory can create
   "core_object_factory_types": {
     "core type (as string)": {
-      "namespace": 0,
+      // byte 5 of the gid of templates for this core type, null if there are none
+      "category": 123,
       // hash of the CoreObject type name, a djb2 variant (not a class hash)
       "type_hash": 123
     }
